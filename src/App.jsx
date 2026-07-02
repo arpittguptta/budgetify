@@ -108,11 +108,11 @@ function seedMonth() {
     key,
     income: { expected: null, actual: null },
     fixed: [
-      { name: "Rent", budget: null, actual: null },
-      { name: "Groceries", budget: null, actual: null }
+      { name: "Rent", budget: null, actual: null, paidMark: false },
+      { name: "Groceries", budget: null, actual: null, paidMark: false }
     ],
     cc: [
-      { name: "Card 1", due: null, paid: null, remarks: "" }
+      { name: "Card 1", due: null, paid: null, remarks: "", paidMark: false }
     ],
     variable: [
       { name: "Dining Out", budget: null, actual: null }
@@ -140,10 +140,11 @@ function buildNextMonth(prev, key) {
       name: r.name,
       budget: r.budget,
       actual: null,
+      paidMark: false,
       ...(r.emiPlan ? { emiPlan: r.emiPlan } : {}),
       ...(r.wishlistItemId ? { wishlistItemId: r.wishlistItemId } : {})
     })),
-    cc: prev.cc.map(r => ({ name: r.name, due: r.due, paid: null, remarks: "" })),
+    cc: prev.cc.map(r => ({ name: r.name, due: r.due, paid: null, remarks: "", paidMark: false })),
     variable: prev.variable.map(r => ({ name: r.name, budget: r.budget, actual: null })),
     debts: prev.debts.filter(r => {
       if (!r.emiPlan) return true;
@@ -362,6 +363,7 @@ function SheetWrap({ cols, children }) {
 function ExpensesTab({ month, setMonth }) {
   rowCounter = 1;
   const c = computeMonth(month);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const update = (section, idx, field, value) => {
     setMonth(prev => ({ ...prev, [section]: prev[section].map((r, i) => i === idx ? { ...r, [field]: value } : r) }));
@@ -369,106 +371,148 @@ function ExpensesTab({ month, setMonth }) {
   const addRow = (section, blank) => setMonth(prev => ({ ...prev, [section]: [...prev[section], blank] }));
   const removeRow = (section, idx) => setMonth(prev => ({ ...prev, [section]: prev[section].filter((_, i) => i !== idx) }));
 
+  const clearActuals = () => {
+    setMonth(prev => ({
+      ...prev,
+      fixed: (prev.fixed || []).map(r => ({ ...r, actual: null, paidMark: false })),
+      cc: (prev.cc || []).map(r => ({ ...r, due: null, paid: null, paidMark: false })),
+      variable: (prev.variable || []).map(r => ({ ...r, actual: null }))
+    }));
+    setConfirmClear(false);
+  };
+
   return (
-    <SheetWrap cols={7}>
-      <SectionTitle title="FIXED EXPENSES" span={7} />
-      <HeaderRow labels={["Expense", "Budget (₹)", "Actual Paid (₹)", "Variance (₹)", "Status", "", ""]} />
-      {month.fixed.map((r, i) => {
-        const hasActual = r.actual !== null && r.actual !== undefined;
-        const variance = num(r.actual) - num(r.budget);
-        const status = expenseStatus(num(r.budget), num(r.actual), hasActual);
-        return (
-          <tr key={i}>
-            <RowNum />
-            <Cell><EditText value={r.name} onChange={v => update("fixed", i, "name", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.budget} onChange={v => update("fixed", i, "budget", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.actual} onChange={v => update("fixed", i, "actual", v)} /></Cell>
-            <Cell align="right">{fmt(variance)}</Cell>
-            <Cell><span className={badgeClass(status)}>{status}</span></Cell>
-            <Cell />
-            <Cell align="center"><button className="rowbtn" onClick={() => removeRow("fixed", i)}>×</button></Cell>
-          </tr>
-        );
-      })}
-      <tr className="total-row">
-        <RowNum />
-        <Cell strong>Total Fixed</Cell>
-        <Cell align="right" strong>{fmt(c.fixedBudget)}</Cell>
-        <Cell align="right" strong>{fmt(c.fixedActual)}</Cell>
-        <Cell align="right" strong>{fmt(c.fixedActual - c.fixedBudget)}</Cell>
-        <Cell /><Cell />
-        <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("fixed", { name: "New expense", budget: null, actual: null })}>+</button></Cell>
-      </tr>
+    <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <button className="signoutbtn" onClick={() => setConfirmClear(true)} title="Clear actual amounts, paid marks, and card dues/paid for this month">
+          Clear this month's actuals
+        </button>
+      </div>
 
-      <SectionTitle title="CREDIT CARD BILLS" span={7} />
-      <HeaderRow labels={["Card", "Amount Due", "Paid", "Variance (₹)", "Status", "Remarks", ""]} />
-      {month.cc.map((r, i) => {
-        const hasPaid = r.paid !== null && r.paid !== undefined;
-        const variance = num(r.paid) - num(r.due);
-        const status = ccStatus(num(r.due), num(r.paid), hasPaid);
-        return (
-          <tr key={i}>
-            <RowNum />
-            <Cell><EditText value={r.name} onChange={v => update("cc", i, "name", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.due} onChange={v => update("cc", i, "due", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.paid} onChange={v => update("cc", i, "paid", v)} /></Cell>
-            <Cell align="right">{fmt(variance)}</Cell>
-            <Cell><span className={badgeClass(status)}>{status}</span></Cell>
-            <Cell><EditText value={r.remarks} onChange={v => update("cc", i, "remarks", v)} /></Cell>
-            <Cell align="center"><button className="rowbtn" onClick={() => removeRow("cc", i)}>×</button></Cell>
-          </tr>
-        );
-      })}
-      <tr className="total-row">
-        <RowNum />
-        <Cell strong>Total Credit Cards</Cell>
-        <Cell align="right" strong>{fmt(c.ccDue)}</Cell>
-        <Cell align="right" strong>{fmt(c.ccPaid)}</Cell>
-        <Cell align="right" strong>{fmt(c.ccPaid - c.ccDue)}</Cell>
-        <Cell /><Cell />
-        <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("cc", { name: "New card", due: null, paid: null, remarks: "" })}>+</button></Cell>
-      </tr>
+      <SheetWrap cols={8}>
+        <SectionTitle title="FIXED EXPENSES" span={8} />
+        <HeaderRow labels={["Expense", "Budget (₹)", "Actual Paid (₹)", "Variance (₹)", "Status", "Paid?", "", ""]} />
+        {month.fixed.map((r, i) => {
+          const hasActual = r.actual !== null && r.actual !== undefined;
+          const variance = num(r.actual) - num(r.budget);
+          const status = expenseStatus(num(r.budget), num(r.actual), hasActual);
+          const paid = !!r.paidMark;
+          return (
+            <tr key={i} className={paid ? "paid-row" : undefined}>
+              <RowNum />
+              <Cell><EditText value={r.name} onChange={v => update("fixed", i, "name", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.budget} onChange={v => update("fixed", i, "budget", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.actual} onChange={v => update("fixed", i, "actual", v)} /></Cell>
+              <Cell align="right">{fmt(variance)}</Cell>
+              <Cell><span className={badgeClass(status)}>{status}</span></Cell>
+              <Cell align="center"><input type="checkbox" className="paidmark" checked={paid} onChange={e => update("fixed", i, "paidMark", e.target.checked)} title="Mark as paid" /></Cell>
+              <Cell />
+              <Cell align="center"><button className="rowbtn" onClick={() => removeRow("fixed", i)}>×</button></Cell>
+            </tr>
+          );
+        })}
+        <tr className="total-row">
+          <RowNum />
+          <Cell strong>Total Fixed</Cell>
+          <Cell align="right" strong>{fmt(c.fixedBudget)}</Cell>
+          <Cell align="right" strong>{fmt(c.fixedActual)}</Cell>
+          <Cell align="right" strong>{fmt(c.fixedActual - c.fixedBudget)}</Cell>
+          <Cell /><Cell /><Cell />
+          <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("fixed", { name: "New expense", budget: null, actual: null, paidMark: false })}>+</button></Cell>
+        </tr>
 
-      <SectionTitle title="VARIABLE EXPENSES" span={7} />
-      <HeaderRow labels={["Expense", "Budget (₹)", "Actual Paid (₹)", "Remaining (₹)", "Variance (₹)", "Status", ""]} />
-      {month.variable.map((r, i) => {
-        const hasActual = r.actual !== null && r.actual !== undefined;
-        const remaining = num(r.budget) - num(r.actual);
-        const variance = num(r.actual) - num(r.budget);
-        const status = expenseStatus(num(r.budget), num(r.actual), hasActual);
-        return (
-          <tr key={i}>
-            <RowNum />
-            <Cell><EditText value={r.name} onChange={v => update("variable", i, "name", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.budget} onChange={v => update("variable", i, "budget", v)} /></Cell>
-            <Cell align="right"><EditNum value={r.actual} onChange={v => update("variable", i, "actual", v)} /></Cell>
-            <Cell align="right">{fmt(remaining)}</Cell>
-            <Cell align="right">{fmt(variance)}</Cell>
-            <Cell><span className={badgeClass(status)}>{status}</span></Cell>
-            <Cell align="center"><button className="rowbtn" onClick={() => removeRow("variable", i)}>×</button></Cell>
-          </tr>
-        );
-      })}
-      <tr className="total-row">
-        <RowNum />
-        <Cell strong>Total Variable</Cell>
-        <Cell align="right" strong>{fmt(c.varBudget)}</Cell>
-        <Cell align="right" strong>{fmt(c.varActual)}</Cell>
-        <Cell align="right" strong>{fmt(c.varBudget - c.varActual)}</Cell>
-        <Cell align="right" strong>{fmt(c.varActual - c.varBudget)}</Cell>
-        <Cell />
-        <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("variable", { name: "New expense", budget: null, actual: null })}>+</button></Cell>
-      </tr>
+        <SectionTitle title="CREDIT CARD BILLS" span={8} />
+        <HeaderRow labels={["Card", "Amount Due", "Paid", "Variance (₹)", "Status", "Paid?", "Remarks", ""]} />
+        {month.cc.map((r, i) => {
+          const hasPaid = r.paid !== null && r.paid !== undefined;
+          const variance = num(r.paid) - num(r.due);
+          const status = ccStatus(num(r.due), num(r.paid), hasPaid);
+          const paid = !!r.paidMark;
+          return (
+            <tr key={i} className={paid ? "paid-row" : undefined}>
+              <RowNum />
+              <Cell><EditText value={r.name} onChange={v => update("cc", i, "name", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.due} onChange={v => update("cc", i, "due", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.paid} onChange={v => update("cc", i, "paid", v)} /></Cell>
+              <Cell align="right">{fmt(variance)}</Cell>
+              <Cell><span className={badgeClass(status)}>{status}</span></Cell>
+              <Cell align="center"><input type="checkbox" className="paidmark" checked={paid} onChange={e => update("cc", i, "paidMark", e.target.checked)} title="Mark as paid" /></Cell>
+              <Cell><EditText value={r.remarks} onChange={v => update("cc", i, "remarks", v)} /></Cell>
+              <Cell align="center"><button className="rowbtn" onClick={() => removeRow("cc", i)}>×</button></Cell>
+            </tr>
+          );
+        })}
+        <tr className="total-row">
+          <RowNum />
+          <Cell strong>Total Credit Cards</Cell>
+          <Cell align="right" strong>{fmt(c.ccDue)}</Cell>
+          <Cell align="right" strong>{fmt(c.ccPaid)}</Cell>
+          <Cell align="right" strong>{fmt(c.ccPaid - c.ccDue)}</Cell>
+          <Cell /><Cell /><Cell />
+          <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("cc", { name: "New card", due: null, paid: null, remarks: "", paidMark: false })}>+</button></Cell>
+        </tr>
 
-      <tr className="grand-total-row">
-        <RowNum />
-        <Cell strong>TOTAL EXPENSES</Cell>
-        <Cell align="right" strong>{fmt(c.expBudget)}</Cell>
-        <Cell align="right" strong>{fmt(c.expActual)}</Cell>
-        <Cell align="right" strong>{fmt(c.expActual - c.expBudget)}</Cell>
-        <Cell /><Cell /><Cell />
-      </tr>
-    </SheetWrap>
+        <SectionTitle title="VARIABLE EXPENSES" span={8} />
+        <HeaderRow labels={["Expense", "Budget (₹)", "Actual Paid (₹)", "Remaining (₹)", "Variance (₹)", "Status", "", ""]} />
+        {month.variable.map((r, i) => {
+          const hasActual = r.actual !== null && r.actual !== undefined;
+          const remaining = num(r.budget) - num(r.actual);
+          const variance = num(r.actual) - num(r.budget);
+          const status = expenseStatus(num(r.budget), num(r.actual), hasActual);
+          return (
+            <tr key={i}>
+              <RowNum />
+              <Cell><EditText value={r.name} onChange={v => update("variable", i, "name", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.budget} onChange={v => update("variable", i, "budget", v)} /></Cell>
+              <Cell align="right"><EditNum value={r.actual} onChange={v => update("variable", i, "actual", v)} /></Cell>
+              <Cell align="right">{fmt(remaining)}</Cell>
+              <Cell align="right">{fmt(variance)}</Cell>
+              <Cell><span className={badgeClass(status)}>{status}</span></Cell>
+              <Cell />
+              <Cell align="center"><button className="rowbtn" onClick={() => removeRow("variable", i)}>×</button></Cell>
+            </tr>
+          );
+        })}
+        <tr className="total-row">
+          <RowNum />
+          <Cell strong>Total Variable</Cell>
+          <Cell align="right" strong>{fmt(c.varBudget)}</Cell>
+          <Cell align="right" strong>{fmt(c.varActual)}</Cell>
+          <Cell align="right" strong>{fmt(c.varBudget - c.varActual)}</Cell>
+          <Cell align="right" strong>{fmt(c.varActual - c.varBudget)}</Cell>
+          <Cell /><Cell />
+          <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("variable", { name: "New expense", budget: null, actual: null })}>+</button></Cell>
+        </tr>
+
+        <tr className="grand-total-row">
+          <RowNum />
+          <Cell strong>TOTAL EXPENSES</Cell>
+          <Cell align="right" strong>{fmt(c.expBudget)}</Cell>
+          <Cell align="right" strong>{fmt(c.expActual)}</Cell>
+          <Cell align="right" strong>{fmt(c.expActual - c.expBudget)}</Cell>
+          <Cell /><Cell /><Cell /><Cell />
+        </tr>
+      </SheetWrap>
+
+      {confirmClear && (
+        <div className="modal-backdrop" onClick={() => setConfirmClear(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Clear actuals for {monthLabel(month.key)}?</h3>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-mid)" }}>
+              This will clear:<br/>
+              • Fixed Expenses — actual amounts and paid marks<br/>
+              • Credit Cards — amount due, paid, and paid marks<br/>
+              • Variable Expenses — actual amounts<br/><br/>
+              Budgets, category names, and remarks stay. You can Undo (↶) after.
+            </p>
+            <div className="modal-actions">
+              <button className="signoutbtn" onClick={() => setConfirmClear(false)}>Cancel</button>
+              <button className="savebtn" onClick={clearActuals}>Clear actuals</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -477,84 +521,120 @@ function ExpensesTab({ month, setMonth }) {
 function SavingsTab({ month, setMonth }) {
   rowCounter = 1;
   const c = computeMonth(month);
+  const [confirmClear, setConfirmClear] = useState(false);
   const updateIncome = (field, value) => setMonth(prev => ({ ...prev, income: { ...prev.income, [field]: value } }));
   const updateSB = (field, value) => setMonth(prev => ({ ...prev, savingsBalance: { ...(prev.savingsBalance || { opening: 0, withdrawals: null }), [field]: value } }));
 
-  return (
-    <SheetWrap cols={4}>
-      <SectionTitle title="INCOME & SAVINGS SUMMARY" span={4} />
-      <HeaderRow labels={["", "Expected (₹)", "Actual (₹)", "Difference (₹)"]} />
-      <tr>
-        <RowNum />
-        <Cell strong>Income</Cell>
-        <Cell align="right"><EditNum value={month.income.expected} onChange={v => updateIncome("expected", v)} /></Cell>
-        <Cell align="right"><EditNum value={month.income.actual} onChange={v => updateIncome("actual", v)} /></Cell>
-        <Cell align="right">{fmt(num(month.income.actual) - num(month.income.expected))}</Cell>
-      </tr>
-      <tr>
-        <RowNum />
-        <Cell strong>Total Expenses</Cell>
-        <Cell align="right">{fmt(c.expBudget)}</Cell>
-        <Cell align="right">{fmt(c.expActual)}</Cell>
-        <Cell align="right">{fmt(c.expActual - c.expBudget)}</Cell>
-      </tr>
-      <tr className="total-row">
-        <RowNum />
-        <Cell strong>Savings</Cell>
-        <Cell align="right" strong>{fmt(c.savingsExpected)}</Cell>
-        <Cell align="right" strong>{fmt(c.savingsActual)}</Cell>
-        <Cell align="right" strong>{fmt(c.savingsActual - c.savingsExpected)}</Cell>
-      </tr>
-      <tr>
-        <RowNum />
-        <Cell strong>Savings Rate (%)</Cell>
-        <Cell align="right">{c.rateExpected.toFixed(1)}%</Cell>
-        <Cell align="right">{c.rateActual.toFixed(1)}%</Cell>
-        <Cell align="right">{(c.rateActual - c.rateExpected).toFixed(1)}%</Cell>
-      </tr>
-      <tr>
-        <RowNum />
-        <Cell strong>Budget Accuracy (%)</Cell>
-        <Cell align="right">-</Cell>
-        <Cell align="right">{c.budgetAccuracy !== null ? c.budgetAccuracy.toFixed(1) + "%" : "-"}</Cell>
-        <Cell />
-      </tr>
+  const clearActuals = () => {
+    setMonth(prev => ({
+      ...prev,
+      income: { ...(prev.income || { expected: null }), actual: null },
+      savingsBalance: { ...(prev.savingsBalance || { opening: 0 }), withdrawals: null }
+    }));
+    setConfirmClear(false);
+  };
 
-      <SectionTitle title="SAVINGS BALANCE (ACTUAL AMOUNT LEFT)" span={4} />
-      <HeaderRow labels={["", "Amount (₹)", "", ""]} />
-      <tr>
-        <RowNum />
-        <Cell strong>Opening Balance</Cell>
-        <Cell align="right"><EditNum value={month.savingsBalance?.opening} onChange={v => updateSB("opening", v)} /></Cell>
-        <Cell /><Cell />
-      </tr>
-      <tr>
-        <RowNum />
-        <Cell strong>+ This Month's Savings</Cell>
-        <Cell align="right">{fmt(c.savingsActual)}</Cell>
-        <Cell /><Cell />
-      </tr>
-      <tr>
-        <RowNum />
-        <Cell strong>− Withdrawn / Dipped Into</Cell>
-        <Cell align="right"><EditNum value={month.savingsBalance?.withdrawals} onChange={v => updateSB("withdrawals", v)} /></Cell>
-        <Cell /><Cell />
-      </tr>
-      {(month.wishlistWithdrawals || []).length > 0 && (
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <button className="signoutbtn" onClick={() => setConfirmClear(true)} title="Clear actual income and withdrawals for this month">
+          Clear this month's actuals
+        </button>
+      </div>
+
+      <SheetWrap cols={4}>
+        <SectionTitle title="INCOME & SAVINGS SUMMARY" span={4} />
+        <HeaderRow labels={["", "Expected (₹)", "Actual (₹)", "Difference (₹)"]} />
         <tr>
           <RowNum />
-          <Cell strong>− Wishlist-funded withdrawals</Cell>
-          <Cell align="right">{fmt((month.wishlistWithdrawals || []).reduce((s, w) => s + num(w.amount), 0))}</Cell>
-          <Cell colSpan={2}><span className="muted" style={{ fontSize: 11 }}>Auto-tracked from applied wishlist plans</span></Cell>
+          <Cell strong>Income</Cell>
+          <Cell align="right"><EditNum value={month.income.expected} onChange={v => updateIncome("expected", v)} /></Cell>
+          <Cell align="right"><EditNum value={month.income.actual} onChange={v => updateIncome("actual", v)} /></Cell>
+          <Cell align="right">{fmt(num(month.income.actual) - num(month.income.expected))}</Cell>
         </tr>
+        <tr>
+          <RowNum />
+          <Cell strong>Total Expenses</Cell>
+          <Cell align="right">{fmt(c.expBudget)}</Cell>
+          <Cell align="right">{fmt(c.expActual)}</Cell>
+          <Cell align="right">{fmt(c.expActual - c.expBudget)}</Cell>
+        </tr>
+        <tr className="total-row">
+          <RowNum />
+          <Cell strong>Savings</Cell>
+          <Cell align="right" strong>{fmt(c.savingsExpected)}</Cell>
+          <Cell align="right" strong>{fmt(c.savingsActual)}</Cell>
+          <Cell align="right" strong>{fmt(c.savingsActual - c.savingsExpected)}</Cell>
+        </tr>
+        <tr>
+          <RowNum />
+          <Cell strong>Savings Rate (%)</Cell>
+          <Cell align="right">{c.rateExpected.toFixed(1)}%</Cell>
+          <Cell align="right">{c.rateActual.toFixed(1)}%</Cell>
+          <Cell align="right">{(c.rateActual - c.rateExpected).toFixed(1)}%</Cell>
+        </tr>
+        <tr>
+          <RowNum />
+          <Cell strong>Budget Accuracy (%)</Cell>
+          <Cell align="right">-</Cell>
+          <Cell align="right">{c.budgetAccuracy !== null ? c.budgetAccuracy.toFixed(1) + "%" : "-"}</Cell>
+          <Cell />
+        </tr>
+
+        <SectionTitle title="SAVINGS BALANCE (ACTUAL AMOUNT LEFT)" span={4} />
+        <HeaderRow labels={["", "Amount (₹)", "", ""]} />
+        <tr>
+          <RowNum />
+          <Cell strong>Opening Balance</Cell>
+          <Cell align="right"><EditNum value={month.savingsBalance?.opening} onChange={v => updateSB("opening", v)} /></Cell>
+          <Cell /><Cell />
+        </tr>
+        <tr>
+          <RowNum />
+          <Cell strong>+ This Month's Savings</Cell>
+          <Cell align="right">{fmt(c.savingsActual)}</Cell>
+          <Cell /><Cell />
+        </tr>
+        <tr>
+          <RowNum />
+          <Cell strong>− Withdrawn / Dipped Into</Cell>
+          <Cell align="right"><EditNum value={month.savingsBalance?.withdrawals} onChange={v => updateSB("withdrawals", v)} /></Cell>
+          <Cell /><Cell />
+        </tr>
+        {(month.wishlistWithdrawals || []).length > 0 && (
+          <tr>
+            <RowNum />
+            <Cell strong>− Wishlist-funded withdrawals</Cell>
+            <Cell align="right">{fmt((month.wishlistWithdrawals || []).reduce((s, w) => s + num(w.amount), 0))}</Cell>
+            <Cell colSpan={2}><span className="muted" style={{ fontSize: 11 }}>Auto-tracked from applied wishlist plans</span></Cell>
+          </tr>
+        )}
+        <tr className="grand-total-row">
+          <RowNum />
+          <Cell strong>Closing Balance</Cell>
+          <Cell align="right" strong>{fmt(c.closingBalance)}</Cell>
+          <Cell /><Cell />
+        </tr>
+      </SheetWrap>
+
+      {confirmClear && (
+        <div className="modal-backdrop" onClick={() => setConfirmClear(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Clear savings actuals for {monthLabel(month.key)}?</h3>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-mid)" }}>
+              This will clear:<br/>
+              • Actual income for this month<br/>
+              • Withdrawals from savings<br/><br/>
+              Expected income and opening balance stay. Wishlist-funded withdrawals stay (unfund the item to reverse those). You can Undo (↶) after.
+            </p>
+            <div className="modal-actions">
+              <button className="signoutbtn" onClick={() => setConfirmClear(false)}>Cancel</button>
+              <button className="savebtn" onClick={clearActuals}>Clear actuals</button>
+            </div>
+          </div>
+        </div>
       )}
-      <tr className="grand-total-row">
-        <RowNum />
-        <Cell strong>Closing Balance</Cell>
-        <Cell align="right" strong>{fmt(c.closingBalance)}</Cell>
-        <Cell /><Cell />
-      </tr>
-    </SheetWrap>
+    </div>
   );
 }
 
@@ -1042,8 +1122,8 @@ function HomeTab({ allMonths, goals, wishlist, onGo }) {
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={netWorthSeries}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Line type="monotone" dataKey="netWorth" name="Net worth" stroke="#6BCEB6" strokeWidth={2.5} dot={{ r: 3 }} />
           </LineChart>
@@ -1731,8 +1811,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             <Line type="monotone" dataKey="income" name="Income" stroke="#8FB8E5" strokeWidth={2} dot={{ r: 3 }} />
@@ -1747,8 +1827,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             <Line type="monotone" dataKey="expenses" name="Total expense" stroke="#F0F4FA" strokeWidth={2} dot={{ r: 3 }} />
@@ -1763,8 +1843,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={ccData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             {cardNames.map((name, i) => (
@@ -1785,8 +1865,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={catData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(1)}k`} />
+            <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(1)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             <Line type="monotone" dataKey="budget" name="Budget" stroke="#E8C46B" strokeWidth={2} dot={{ r: 3 }} />
@@ -1800,8 +1880,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             <Line type="monotone" dataKey="balance" name="Closing balance" stroke="#6BCEB6" strokeWidth={2} dot={{ r: 3 }} />
@@ -1815,8 +1895,8 @@ function HistoryTab({ allMonths }) {
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={rows}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-            <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+            <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+            <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
             <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
             <Line type="monotone" dataKey="netWorth" name="Net worth" stroke="#6BCEB6" strokeWidth={2.5} dot={{ r: 3 }} />
@@ -1832,8 +1912,8 @@ function HistoryTab({ allMonths }) {
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={rows}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2A3446" />
-                <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#7A88A0" }} />
-                <YAxis tick={{ fontSize: 12, fill: "#7A88A0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
+                <XAxis dataKey="shortLabel" tick={{ fontSize: 12, fill: "#8B99B0" }} />
+                <YAxis tick={{ fontSize: 12, fill: "#8B99B0" }} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={v => fmt(v)} contentStyle={{ background: "#1B2231", border: "1px solid #2A3446", borderRadius: 6, color: "#DDE3EE", fontSize: 12 }} labelStyle={{ color: "#F0F4FA" }} />
                 <Legend wrapperStyle={{ fontSize: 11, color: "#DDE3EE" }} />
                 <Line type="monotone" dataKey="portfolio" name="Portfolio value" stroke="#6b46c1" strokeWidth={2} dot={{ r: 3 }} />
@@ -1910,7 +1990,7 @@ function Login() {
         .login-error { color: #E88B7A; font-size: 12px; margin-bottom: 10px; }
       `}</style>
       <form className="login-form" onSubmit={handleSubmit}>
-        <h2>Budgetify💵</h2>
+        <h2>Budgetify💰</h2>
         <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
         <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
         {error && <div className="login-error">{error}</div>}
@@ -2172,6 +2252,51 @@ function PlannerApp() {
     setMonth(nm);
   }, [monthsIndex, switchMonth, flushPendingSaves]);
 
+  // Build a blank historical month template using an existing month's category structure.
+  // Unlike buildNextMonth, values are NOT carried — user is entering historical data.
+  const buildBlankMonthFromTemplate = useCallback((templateMonth, key) => {
+    return {
+      key,
+      income: { expected: null, actual: null },
+      fixed: (templateMonth?.fixed || []).filter(r => !r.emiPlan).map(r => ({ name: r.name, budget: null, actual: null, paidMark: false })),
+      cc: (templateMonth?.cc || []).map(r => ({ name: r.name, due: null, paid: null, remarks: "", paidMark: false })),
+      variable: (templateMonth?.variable || []).map(r => ({ name: r.name, budget: null, actual: null })),
+      debts: [],
+      lent: [],
+      investments: [],
+      savingsBalance: { opening: 0, withdrawals: null }
+    };
+  }, []);
+
+  const addPastMonth = useCallback(async (targetKey) => {
+    // Validate format YYYY-MM
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(targetKey)) {
+      alert("Please enter a month in the format YYYY-MM, e.g. 2025-03");
+      return false;
+    }
+    // Already exists?
+    if (monthsIndex.includes(targetKey)) {
+      switchMonth(targetKey);
+      return true;
+    }
+    await flushPendingSaves();
+    // Use the earliest existing month as the template for category structure.
+    const sorted = [...allMonthsRef.current].sort((a, b) => a.key.localeCompare(b.key));
+    const template = sorted[0] || monthRef.current;
+    const nm = buildBlankMonthFromTemplate(template, targetKey);
+    await saveMonthDoc(nm);
+    const keys = [...monthsIndex, targetKey].sort();
+    setMonthsIndex(keys);
+    setAllMonths(prevAll => [...prevAll, nm]);
+    skipFirstMonthSave.current = true;
+    setCurrentKey(targetKey);
+    setMonth(nm);
+    return true;
+  }, [monthsIndex, switchMonth, flushPendingSaves, buildBlankMonthFromTemplate]);
+
+  const [showPastMonthModal, setShowPastMonthModal] = useState(false);
+  const [pastMonthInput, setPastMonthInput] = useState("");
+
   if (loading || !month) return <div className="app-loading">Loading your budget…</div>;
 
   const sortedMonths = [...allMonths].sort((a, b) => a.key.localeCompare(b.key));
@@ -2190,8 +2315,8 @@ function PlannerApp() {
           --border-strong: #2A3446;
           --text: #F0F4FA;
           --text-mid: #DDE3EE;
-          --text-dim: #7A88A0;
-          --text-faint: #5A6580;
+          --text-dim: #8B99B0;
+          --text-faint: #7A8299;
           --accent: #6BCEB6;
           --accent-soft: rgba(107,206,182,0.12);
           --accent-border: rgba(107,206,182,0.28);
@@ -2200,7 +2325,6 @@ function PlannerApp() {
           --warn: #E8C46B;
           --sheet-bg: #1B2231;
           --sheet-header-bg: #232B3B;
-          --sheet-header-text: #DDE3EE;
           --input-focus-bg: rgba(107,206,182,0.05);
           font-family: 'Inter', -apple-system, 'Segoe UI', system-ui, sans-serif;
           color: var(--text-mid);
@@ -2246,16 +2370,18 @@ function PlannerApp() {
         .month-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .sheet-scroll { overflow-x: auto; border: 1px solid var(--border); background: var(--sheet-bg); border-radius: 8px; }
         table.sheet { border-collapse: collapse; width: 100%; min-width: 480px; font-size: 12.5px; color: var(--text-mid); }
-        .letter-row .corner, .letter-row .letter { background: var(--sheet-header-bg); border: 1px solid var(--border); text-align: center; font-weight: 500; color: var(--text-faint); padding: 4px 0; position: sticky; top: 0; z-index: 2; font-size: 11px; letter-spacing: 0.02em; }
+        .letter-row .corner, .letter-row .letter { background: var(--sheet-header-bg); border: 1px solid var(--border); text-align: center; font-weight: 500; color: var(--text-dim); padding: 4px 0; position: sticky; top: 0; z-index: 2; font-size: 11px; letter-spacing: 0.02em; }
         .letter-row .corner { width: 30px; }
         .letter-row .letter { min-width: 92px; }
-        .rownum { background: var(--sheet-header-bg); border: 1px solid var(--border); text-align: center; color: var(--text-faint); font-weight: 500; width: 30px; font-size: 11px; }
+        .rownum { background: var(--sheet-header-bg); border: 1px solid var(--border); text-align: center; color: var(--text-dim); font-weight: 500; width: 30px; font-size: 11px; }
         .section-row .section-title { background: var(--surface-2); color: var(--text); font-weight: 500; padding: 7px 10px; border: 1px solid var(--border-strong); letter-spacing: 0.05em; font-size: 11.5px; text-transform: uppercase; }
         .colhead-row .colhead { background: var(--surface-2); font-weight: 500; border: 1px solid var(--border); padding: 6px 10px; white-space: nowrap; color: var(--text-mid); font-size: 11.5px; }
         .cell { border: 1px solid var(--border); padding: 3px 8px; height: 28px; white-space: nowrap; }
         .cell-strong { font-weight: 500; color: var(--text); }
         .total-row .cell { background: var(--surface-2); }
         .grand-total-row .cell { background: var(--accent-soft); color: var(--text); font-weight: 500; border-color: var(--accent-border); }
+        .paid-row .cell { background: rgba(107,206,182,0.05); }
+        .paidmark { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; vertical-align: middle; }
         .editin { border: none; background: transparent; font-family: inherit; font-size: 12.5px; width: 100%; padding: 4px 3px; outline-offset: 0; color: var(--text-mid); }
         .editin:focus { outline: 1.5px solid var(--accent); background: var(--input-focus-bg); color: var(--text); border-radius: 3px; }
         .edit-text { min-width: 90px; }
@@ -2329,7 +2455,7 @@ function PlannerApp() {
       `}</style>
 
       <div className="topbar">
-        <h1>Budgetify💵</h1>
+        <h1>Budgetify💰</h1>
         <div className="tabs-row">
           {TABS.map(t => (
             <button key={t.id} className={"tabbtn" + (view === t.id ? " active" : "")} onClick={() => setView(t.id)}>
@@ -2342,6 +2468,7 @@ function PlannerApp() {
             {monthsIndex.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
           </select>
           <button className="newmonthbtn" onClick={addNextMonth}>+ Next month</button>
+          <button className="signoutbtn" onClick={() => { setPastMonthInput(""); setShowPastMonthModal(true); }} title="Add a previous month for historical data">+ Past month</button>
           <button className="signoutbtn" onClick={undo} disabled={undoStack.length === 0} title="Undo last change">↶ Undo</button>
           <button className="savebtn" onClick={saveNow} title="Force save right now">💾 Save</button>
           <span className="savebadge">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}</span>
@@ -2371,6 +2498,44 @@ function PlannerApp() {
         />
       )}
       {view === "history" && <HistoryTab allMonths={allMonths} />}
+
+      {showPastMonthModal && (
+        <div className="modal-backdrop" onClick={() => setShowPastMonthModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Add a past month</h3>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-mid)" }}>
+              Enter the month you want to backfill. It'll be created as a blank sheet using your existing category names so you can enter historical numbers manually.
+            </p>
+            <input
+              type="month"
+              value={pastMonthInput}
+              onChange={e => setPastMonthInput(e.target.value)}
+              style={{
+                width: "100%", boxSizing: "border-box", marginTop: 10, padding: "10px 12px",
+                background: "var(--bg)", border: "1px solid var(--border-strong)", borderRadius: 6,
+                color: "var(--text-mid)", fontFamily: "inherit", fontSize: 13, colorScheme: "dark"
+              }}
+              autoFocus
+            />
+            <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
+              Note: Opening balance is set to ₹0. Enter it manually on the Savings tab. Adding a past month does not change the balance chain of later months.
+            </p>
+            <div className="modal-actions">
+              <button className="signoutbtn" onClick={() => setShowPastMonthModal(false)}>Cancel</button>
+              <button
+                className="savebtn"
+                onClick={async () => {
+                  const ok = await addPastMonth(pastMonthInput);
+                  if (ok) setShowPastMonthModal(false);
+                }}
+                disabled={!pastMonthInput}
+              >
+                Create month
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
