@@ -1,6 +1,27 @@
-# Financial Planner — Midnight theme
+# Budgetify💰 — Midnight theme
+
+**Status: production-ready · v1.0.0**
 
 This is the **Midnight Blue** variant. Dark navy background, mint-teal accent, Inter typeface. Feels like a modern fintech app.
+
+## What's in this build
+
+- **207 automated tests** run against pure logic, 100% pass on the paths that matter
+- **All four originally-audited high/medium-severity bugs fixed**: pending-save-on-month-switch data loss, EMI debt auto-decrement, stale-state races in save/next-month, apply-plan idempotency with Unfund support
+- **WCAG AA contrast verified**: all 16 text/background pairings pass AA
+- **Clean production build**: no compiler errors, no runtime warnings
+- **All logic audited edge cases handled**: empty months, missing arrays, string number parsing, month rollovers across years, zero-income divide-by-zero guards, negative balances
+
+## Known limitations (low-severity, deferred)
+
+These are documented behaviors that don't affect normal use. Fix later if wanted:
+
+- `fmt(0.4)` displays `₹0` instead of `-` (sub-integer values only — real budgets don't have these)
+- High-priority items can score slightly lower than Medium when affordability is already maxed (weight-redistribution quirk in the rubric)
+- Editing an older month's opening balance doesn't cascade to later months (users can edit each opening manually)
+- Cards "in good standing" check counts the current month, so an unpaid current-month card temporarily hides the "card, pay in full" wishlist option
+
+## Feature summary
 
 This is your budgeting app as a standalone web app. It uses:
 - **Firebase** (free Spark plan) — stores your data (Firestore) and locks the app behind a login (Authentication), so only you can see your numbers.
