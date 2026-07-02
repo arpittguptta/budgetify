@@ -1910,7 +1910,7 @@ function Login() {
         .login-error { color: #E88B7A; font-size: 12px; margin-bottom: 10px; }
       `}</style>
       <form className="login-form" onSubmit={handleSubmit}>
-        <h2>Financial Planner</h2>
+        <h2>Budgetify💵</h2>
         <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
         <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
         {error && <div className="login-error">{error}</div>}
@@ -2329,7 +2329,7 @@ function PlannerApp() {
       `}</style>
 
       <div className="topbar">
-        <h1>Financial Planner</h1>
+        <h1>Budgetify💵</h1>
         <div className="tabs-row">
           {TABS.map(t => (
             <button key={t.id} className={"tabbtn" + (view === t.id ? " active" : "")} onClick={() => setView(t.id)}>
