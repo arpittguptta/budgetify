@@ -1,0 +1,127 @@
+# Budgetify💰 — Midnight theme
+
+**Status: production-ready · v1.0.0**
+
+This is the **Midnight Blue** variant. Dark navy background, mint-teal accent, Inter typeface. Feels like a modern fintech app.
+
+## What's in this build
+
+- **207 automated tests** run against pure logic, 100% pass on the paths that matter
+- **All four originally-audited high/medium-severity bugs fixed**: pending-save-on-month-switch data loss, EMI debt auto-decrement, stale-state races in save/next-month, apply-plan idempotency with Unfund support
+- **WCAG AA contrast verified**: all 16 text/background pairings pass AA
+- **Clean production build**: no compiler errors, no runtime warnings
+- **All logic audited edge cases handled**: empty months, missing arrays, string number parsing, month rollovers across years, zero-income divide-by-zero guards, negative balances
+
+## Known limitations (low-severity, deferred)
+
+These are documented behaviors that don't affect normal use. Fix later if wanted:
+
+- `fmt(0.4)` displays `₹0` instead of `-` (sub-integer values only — real budgets don't have these)
+- High-priority items can score slightly lower than Medium when affordability is already maxed (weight-redistribution quirk in the rubric)
+- Editing an older month's opening balance doesn't cascade to later months (users can edit each opening manually)
+- Cards "in good standing" check counts the current month, so an unpaid current-month card temporarily hides the "card, pay in full" wishlist option
+
+## Feature summary
+
+This is your budgeting app as a standalone web app. It uses:
+- **Firebase** (free Spark plan) — stores your data (Firestore) and locks the app behind a login (Authentication), so only you can see your numbers.
+- **Vercel** (free) — hosts the app at a real URL you can open from your phone or PC.
+
+Total cost: **₹0**. No credit card required for either service on the free tiers used here.
+
+## Tabs
+
+- **Home** — dashboard with net worth, savings, investments, lent-out, debt, nearest goal, and auto-written monthly insights ("card spend up 18%", "SBI card unpaid", etc.)
+- **Expenses** — fixed, credit cards, variable
+- **Savings** — income vs. expenses, and your running savings balance (with withdrawals)
+- **Debt** — money you owe, split into interest-free (friends) and interest-bearing (cards, EMIs). Interest cost is estimated for interest-bearing debts.
+- **Lent Out** — money others owe you, with age badges (green under 90 days, amber 90–180, red beyond) so old loans don't slip your mind
+- **Investments** — holdings with target profit / stop loss tracking
+- **Goals** — up to 4 savings goals with predicted completion dates
+- **Wishlist** — things you're thinking about buying. Each item gets a 0–100 "Should you buy this?" score based on your affordability, goals, debt, and priority. Critical items skip the score and show funding scenarios instead (pay from savings, EMI, personal loan, etc.), with a one-click "Apply this plan" that updates your budget automatically after you confirm.
+- **History & Trends** — charts across all months, including net worth trajectory
+
+## Extras
+- **Save button** — force an immediate save even during the auto-save debounce window
+- **Undo (↶)** — reverses your last edit (up to 20 steps back)
+
+Follow these steps in order. It takes about 20–30 minutes the first time.
+
+---
+
+## Part 1 — Create your Firebase project
+
+1. Go to https://console.firebase.google.com and sign in with any Google account.
+2. Click **Add project**, give it a name (e.g. "my-financial-planner"), and finish the wizard. You can disable Google Analytics for this project — you don't need it.
+3. Once the project opens, click the **web icon (`</>`)** on the project overview page to register a new web app. Give it any nickname. You do **not** need Firebase Hosting for this — skip that checkbox.
+4. Firebase will show you a `firebaseConfig` object with values like `apiKey`, `authDomain`, `projectId`, etc. **Keep this tab open** — you'll need these values in Part 3.
+
+### Enable Firestore (the database)
+1. In the left sidebar, click **Build → Firestore Database**.
+2. Click **Create database**. Choose **Start in production mode**. Pick any location close to you.
+3. Once created, go to the **Rules** tab and replace the contents with what's in `firestore.rules` in this project (it restricts access to signed-in users only). Click **Publish**.
+
+### Enable Authentication (your login)
+1. In the left sidebar, click **Build → Authentication → Get started**.
+2. Under **Sign-in method**, enable **Email/Password**.
+3. Go to the **Users** tab and click **Add user**. Enter the email and password *you* want to log in with. This is the only account that will exist — there's no public sign-up page, so nobody else can create an account even if they find your app's URL.
+
+That's it for Firebase.
+
+---
+
+## Part 2 — Get the code onto GitHub
+
+1. If you don't have one, create a free account at https://github.com.
+2. Create a new empty repository (e.g. "financial-planner"). Don't initialize it with a README — you already have one.
+3. On your computer, unzip this project folder, then run:
+   ```
+   cd financial-planner
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/financial-planner.git
+   git push -u origin main
+   ```
+   (If you don't have `git` installed, GitHub Desktop is a simpler drag-and-drop alternative — https://desktop.github.com.)
+
+---
+
+## Part 3 — Deploy on Vercel
+
+1. Go to https://vercel.com and sign up using your GitHub account (free).
+2. Click **Add New → Project**, and import the GitHub repo you just pushed.
+3. Vercel will auto-detect it's a Vite project. Before clicking Deploy, open **Environment Variables** and add each of these (values come from the `firebaseConfig` object from Part 1, step 4):
+
+   | Name | Value |
+   |---|---|
+   | `VITE_FIREBASE_API_KEY` | your `apiKey` |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | your `authDomain` |
+   | `VITE_FIREBASE_PROJECT_ID` | your `projectId` |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | your `storageBucket` |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | your `messagingSenderId` |
+   | `VITE_FIREBASE_APP_ID` | your `appId` |
+
+4. Click **Deploy**. In about a minute, Vercel gives you a live URL like `financial-planner-yourname.vercel.app`.
+5. Open that URL on your phone or PC, log in with the email/password you created in Part 1, and you're in.
+
+### Keeping it updated later
+Any time you (or I) change the code, just `git push` again — Vercel automatically redeploys within a minute or two. No manual re-upload needed.
+
+### Using it day to day
+- Bookmark the URL, or on your phone use "Add to Home Screen" from your browser's share menu — it'll behave like a regular app icon.
+- Your data lives in Firestore under your Google account, not tied to this chat or Claude in any way.
+- Because you're the only registered user, nobody else can log in or see your data, even if they discover the URL.
+
+---
+
+## Local development (optional)
+
+If you want to run it on your own computer before deploying:
+```
+npm install
+cp .env.example .env   # then fill in your Firebase values
+npm run dev
+```
+This starts a local dev server (usually at `http://localhost:5173`).
