@@ -4,7 +4,7 @@ import {
   Legend, ResponsiveContainer
 } from "recharts";
 import { db, auth } from "./firebase";
-import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 /* ---------------- helpers ---------------- */
@@ -175,6 +175,12 @@ function effectiveOutstanding(debt, currentKey, allMonths) {
 
 /* ---------------- seed / carry-forward ---------------- */
 
+// Returns the current month key in YYYY-MM format, based on the local device date.
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function seedMonth() {
   const now = new Date();
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -303,6 +309,9 @@ async function loadAllMonths() {
 }
 async function saveMonthDoc(m) {
   try { await setDoc(doc(db, "months", m.key), m); } catch (e) { console.error("saveMonth failed", e); }
+}
+async function deleteMonthDoc(key) {
+  try { await deleteDoc(doc(db, "months", key)); return true; } catch (e) { console.error("deleteMonth failed", e); return false; }
 }
 function defaultGoals() {
   return [
@@ -1263,20 +1272,25 @@ function generateInsights(sortedMonths, goals, allMonths) {
   return insights;
 }
 
-function HomeTab({ allMonths, goals, wishlist, onGo }) {
+function HomeTab({ month, allMonths, goals, wishlist, onGo }) {
   const sorted = [...allMonths].sort((a, b) => a.key.localeCompare(b.key));
-  if (sorted.length === 0) {
+  if (sorted.length === 0 || !month) {
     return <div className="empty-state">No data yet. Start filling in the Expenses tab.</div>;
   }
-  const last = sorted[sorted.length - 1];
+  // Use the currently-SELECTED month for stats, not sorted[last].
+  // sorted[last] would pick up empty future placeholder months and poison the dashboard.
+  const last = month;
   const c = computeMonth(last, allMonths);
 
-  // Net worth trend
+  // Net worth trend: still uses all months chronologically
   const netWorthSeries = sorted.map(m => {
     const cc = computeMonth(m, allMonths);
     return { month: monthLabel(m.key), netWorth: cc.netWorth };
   });
-  const prev = sorted.length >= 2 ? computeMonth(sorted[sorted.length - 2], allMonths) : null;
+  // "vs last month" compares to the month with the immediately-previous key that exists.
+  const currentIdx = sorted.findIndex(m => m.key === last.key);
+  const prevMonth = currentIdx > 0 ? sorted[currentIdx - 1] : null;
+  const prev = prevMonth ? computeMonth(prevMonth, allMonths) : null;
   const nwChange = prev ? c.netWorth - prev.netWorth : null;
 
   // Nearest goal
@@ -1301,8 +1315,31 @@ function HomeTab({ allMonths, goals, wishlist, onGo }) {
 
   const insights = generateInsights(sorted, goals, allMonths);
 
+  // Detect whether this month has any meaningful data at all
+  const monthIsEmpty = (last.debts || []).length === 0
+    && (last.lent || []).length === 0
+    && (last.investments || []).length === 0
+    && num(last.income?.actual) === 0
+    && num(last.income?.expected) === 0
+    && (last.fixed || []).every(r => !num(r.actual) && !num(r.budget))
+    && (last.variable || []).every(r => !num(r.actual) && !num(r.budget))
+    && (last.cc || []).every(r => !num(r.due) && !num(r.paid))
+    && !c.hasOverride;
+
+
   return (
     <div className="history">
+      <div className="home-month-header">
+        <span>Showing <b>{monthLabel(last.key)}</b></span>
+        {monthIsEmpty && (
+          <span className="empty-month-badge">This month has no data entered</span>
+        )}
+      </div>
+      {monthIsEmpty && (
+        <div className="empty-month-warning">
+          ⚠ This month is empty. Switch to a month with data using the month selector at the top, or start entering values in the Expenses/Savings tabs.
+        </div>
+      )}
       <div className="stat-cards">
         <div className="stat-card stat-hero" onClick={() => onGo("history")}>
           <div className="stat-label">Net Worth</div>
@@ -2436,9 +2473,24 @@ function PlannerApp() {
       }
       setMonthsIndex(keys);
       setAllMonths(months);
-      const lastKey = keys[keys.length - 1];
-      setCurrentKey(lastKey);
-      setMonth(months.find(m => m.key === lastKey));
+      // Choose the best initial month to show:
+      // 1. If today's month exists, show it
+      // 2. Otherwise, the latest month that is NOT in the future (relative to today)
+      // 3. Otherwise (all months are future), the earliest of them
+      const today = todayKey();
+      let initialKey;
+      if (keys.includes(today)) {
+        initialKey = today;
+      } else {
+        const nonFuture = keys.filter(k => k <= today);
+        if (nonFuture.length > 0) {
+          initialKey = nonFuture[nonFuture.length - 1];
+        } else {
+          initialKey = keys[0];
+        }
+      }
+      setCurrentKey(initialKey);
+      setMonth(months.find(m => m.key === initialKey));
       const g = await loadGoalsDoc();
       setGoals(g);
       const w = await loadWishlistDoc();
@@ -2676,8 +2728,52 @@ function PlannerApp() {
     return true;
   }, [monthsIndex, switchMonth, flushPendingSaves, buildBlankMonthFromTemplate]);
 
+  // Delete a month by key. Firestore + local state. Refuses to delete the last remaining month.
+  // After delete, switches to the immediately-previous month by key (or next if it was the earliest).
+  // Re-runs cascade from the fallback month so opening balances stay consistent.
+  const deleteMonth = useCallback(async (key) => {
+    // Guard: must have at least 2 months
+    const currentKeys = monthsIndex;
+    if (currentKeys.length <= 1) return false;
+    // Flush any pending edits first
+    await flushPendingSaves();
+    // Delete from Firestore
+    const ok = await deleteMonthDoc(key);
+    if (!ok) return false;
+    // Update local state
+    const remainingKeys = currentKeys.filter(k => k !== key).sort();
+    const remainingMonths = allMonthsRef.current.filter(m => m.key !== key);
+    setMonthsIndex(remainingKeys);
+    setAllMonths(remainingMonths);
+    // If we deleted the currently-viewed month, switch to the immediately-previous by key
+    // (fallback to the earliest remaining if the deleted one was the earliest)
+    if (monthRef.current?.key === key) {
+      const idx = currentKeys.indexOf(key);
+      const fallbackKey = idx > 0 ? currentKeys[idx - 1] : remainingKeys[0];
+      const fallback = remainingMonths.find(m => m.key === fallbackKey);
+      if (fallback) {
+        skipFirstMonthSave.current = true;
+        setCurrentKey(fallbackKey);
+        setMonth(fallback);
+      }
+    }
+    // Re-cascade from the earliest remaining month so opening balances are consistent.
+    // Use the current allMonthsRef, which the setAllMonths above will populate on next tick;
+    // we call cascade with the earliest key to walk the full chain.
+    if (remainingKeys.length > 0) {
+      // We need to wait for the state update to propagate to the ref
+      setTimeout(() => {
+        cascadeOpeningBalances(remainingKeys[0]).catch(e => console.error("post-delete cascade failed", e));
+      }, 50);
+    }
+    return true;
+  }, [monthsIndex, flushPendingSaves, cascadeOpeningBalances]);
+
   const [showPastMonthModal, setShowPastMonthModal] = useState(false);
   const [pastMonthInput, setPastMonthInput] = useState("");
+  const [pastMonthYear, setPastMonthYear] = useState("");
+  const [pastMonthMonth, setPastMonthMonth] = useState("");
+  const [confirmDeleteMonth, setConfirmDeleteMonth] = useState(false);
 
   if (loading || !month) return <div className="app-loading">Loading your budget…</div>;
 
@@ -2779,6 +2875,17 @@ function PlannerApp() {
         .diagnostic-row .k { color: var(--text-dim); }
         .diagnostic-row .v { color: var(--text-mid); text-align: right; }
         .diagnostic-warn { color: var(--warn); font-size: 11.5px; margin-top: 6px; padding: 6px 8px; border-left: 2px solid var(--warn); background: rgba(232,196,107,0.05); }
+        .home-month-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 12.5px; color: var(--text-dim); }
+        .home-month-header b { color: var(--text); font-weight: 500; }
+        .empty-month-badge { background: rgba(232,196,107,0.15); color: var(--warn); font-size: 11px; padding: 3px 9px; border-radius: 10px; font-weight: 500; }
+        .empty-month-warning { background: rgba(232,196,107,0.08); border: 1px solid rgba(232,196,107,0.3); color: var(--warn); padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.5; }
+        .deletebtn { border: 1px solid var(--neg); background: transparent; color: var(--neg); padding: 6px 12px; font-size: 12.5px; border-radius: 6px; cursor: pointer; font-family: inherit; }
+        .deletebtn:hover:not(:disabled) { background: rgba(232,139,122,0.08); }
+        .deletebtn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .month-picker-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .month-picker-row select { padding: 10px 12px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-mid); font-family: inherit; font-size: 13px; }
+        .future-month-notice { background: rgba(232,196,107,0.08); border: 1px solid rgba(232,196,107,0.3); color: var(--warn); padding: 8px 12px; border-radius: 6px; margin-top: 10px; font-size: 12px; }
+        .month-option-future { color: var(--warn); }
         .editin { border: none; background: transparent; font-family: inherit; font-size: 12.5px; width: 100%; padding: 4px 3px; outline-offset: 0; color: var(--text-mid); }
         .editin:focus { outline: 1.5px solid var(--accent); background: var(--input-focus-bg); color: var(--text); border-radius: 3px; }
         .edit-text { min-width: 90px; }
@@ -2862,10 +2969,34 @@ function PlannerApp() {
         </div>
         <div className="month-controls">
           <select className="monthselect" value={currentKey} onChange={e => switchMonth(e.target.value)}>
-            {monthsIndex.map(k => <option key={k} value={k}>{monthLabel(k)}</option>)}
+            {monthsIndex.map(k => {
+              const isFuture = k > todayKey();
+              return <option key={k} value={k} className={isFuture ? "month-option-future" : undefined}>
+                {monthLabel(k)}{isFuture ? " (future)" : ""}
+              </option>;
+            })}
           </select>
           <button className="newmonthbtn" onClick={addNextMonth}>+ Next month</button>
-          <button className="signoutbtn" onClick={() => { setPastMonthInput(""); setShowPastMonthModal(true); }} title="Add a previous month for historical data">+ Past month</button>
+          <button
+            className="signoutbtn"
+            onClick={() => {
+              const now = new Date();
+              setPastMonthYear(String(now.getFullYear()));
+              setPastMonthMonth(String(now.getMonth() + 1).padStart(2, "0"));
+              setShowPastMonthModal(true);
+            }}
+            title="Add any month (past or future)"
+          >
+            + Add a month
+          </button>
+          <button
+            className="deletebtn"
+            onClick={() => setConfirmDeleteMonth(true)}
+            disabled={monthsIndex.length <= 1}
+            title={monthsIndex.length <= 1 ? "Can't delete — only one month left" : "Delete the currently selected month"}
+          >
+            🗑 Delete month
+          </button>
           <button className="signoutbtn" onClick={undo} disabled={undoStack.length === 0} title="Undo last change">↶ Undo</button>
           <button className="savebtn" onClick={saveNow} title="Force save right now">💾 Save</button>
           <span className="savebadge">{saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : ""}</span>
@@ -2873,7 +3004,7 @@ function PlannerApp() {
         </div>
       </div>
 
-      {view === "home" && <HomeTab allMonths={allMonths} goals={goals} wishlist={wishlist} onGo={setView} />}
+      {view === "home" && <HomeTab month={month} allMonths={allMonths} goals={goals} wishlist={wishlist} onGo={setView} />}
       {view === "expenses" && <ExpensesTab month={month} setMonth={setMonthWithUndo} allMonths={allMonths} />}
       {view === "savings" && <SavingsTab month={month} setMonth={setMonthWithUndo} allMonths={allMonths} />}
       {view === "debt" && <DebtTab month={month} setMonth={setMonthWithUndo} allMonths={allMonths} />}
@@ -2896,38 +3027,93 @@ function PlannerApp() {
       )}
       {view === "history" && <HistoryTab allMonths={allMonths} />}
 
-      {showPastMonthModal && (
-        <div className="modal-backdrop" onClick={() => setShowPastMonthModal(false)}>
+      {showPastMonthModal && (() => {
+        const targetKey = pastMonthYear && pastMonthMonth ? `${pastMonthYear}-${pastMonthMonth}` : "";
+        const isFuture = targetKey && targetKey > todayKey();
+        const alreadyExists = targetKey && monthsIndex.includes(targetKey);
+        const currentYear = new Date().getFullYear();
+        const years = [];
+        for (let y = currentYear - 10; y <= currentYear + 10; y++) years.push(y);
+        const months = [
+          { v: "01", l: "January" }, { v: "02", l: "February" }, { v: "03", l: "March" },
+          { v: "04", l: "April" }, { v: "05", l: "May" }, { v: "06", l: "June" },
+          { v: "07", l: "July" }, { v: "08", l: "August" }, { v: "09", l: "September" },
+          { v: "10", l: "October" }, { v: "11", l: "November" }, { v: "12", l: "December" }
+        ];
+        return (
+          <div className="modal-backdrop" onClick={() => setShowPastMonthModal(false)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Add a month</h3>
+              <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-mid)" }}>
+                Pick the month you want to add. It'll be created as a blank sheet using your existing category names.
+              </p>
+              <div className="month-picker-row">
+                <select value={pastMonthYear} onChange={e => setPastMonthYear(e.target.value)}>
+                  <option value="">Year…</option>
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <select value={pastMonthMonth} onChange={e => setPastMonthMonth(e.target.value)}>
+                  <option value="">Month…</option>
+                  {months.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
+                </select>
+              </div>
+              {alreadyExists && (
+                <div className="future-month-notice" style={{ borderColor: "rgba(107,206,182,0.3)", background: "rgba(107,206,182,0.06)", color: "var(--accent)" }}>
+                  This month already exists. Clicking Create will just switch to it.
+                </div>
+              )}
+              {isFuture && !alreadyExists && (
+                <div className="future-month-notice">
+                  ⚠ You're adding a <b>future month</b> ({monthLabel(targetKey)}). This is fine for planning, but it'll be empty. Confirm you want to proceed.
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 10 }}>
+                Opening balance is set to ₹0. Enter it manually on the Savings tab. Adding a month does not change the balance chain of other months automatically.
+              </p>
+              <div className="modal-actions">
+                <button className="signoutbtn" onClick={() => setShowPastMonthModal(false)}>Cancel</button>
+                <button
+                  className="savebtn"
+                  onClick={async () => {
+                    if (!targetKey) return;
+                    const ok = await addPastMonth(targetKey);
+                    if (ok) setShowPastMonthModal(false);
+                  }}
+                  disabled={!targetKey}
+                >
+                  {alreadyExists ? "Switch to it" : (isFuture ? "Yes, create future month" : "Create month")}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {confirmDeleteMonth && (
+        <div className="modal-backdrop" onClick={() => setConfirmDeleteMonth(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Add a past month</h3>
+            <h3 style={{ margin: "0 0 12px", color: "var(--text)" }}>Delete {monthLabel(currentKey)}?</h3>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-mid)" }}>
-              Enter the month you want to backfill. It'll be created as a blank sheet using your existing category names so you can enter historical numbers manually.
+              This will permanently delete the {monthLabel(currentKey)} month from your data, including:
             </p>
-            <input
-              type="month"
-              value={pastMonthInput}
-              onChange={e => setPastMonthInput(e.target.value)}
-              style={{
-                width: "100%", boxSizing: "border-box", marginTop: 10, padding: "10px 12px",
-                background: "var(--bg)", border: "1px solid var(--border-strong)", borderRadius: 6,
-                color: "var(--text-mid)", fontFamily: "inherit", fontSize: 13, colorScheme: "dark"
-              }}
-              autoFocus
-            />
-            <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 8 }}>
-              Note: Opening balance is set to ₹0. Enter it manually on the Savings tab. Adding a past month does not change the balance chain of later months.
+            <ul style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--text-mid)", marginTop: 6 }}>
+              <li>{(month.fixed || []).length} fixed expense{(month.fixed || []).length === 1 ? "" : "s"}, {(month.variable || []).length} variable expense{(month.variable || []).length === 1 ? "" : "s"}, {(month.cc || []).length} credit card{(month.cc || []).length === 1 ? "" : "s"}</li>
+              <li>{(month.debts || []).length} debt row{(month.debts || []).length === 1 ? "" : "s"}, {(month.lent || []).length} lent-out entr{(month.lent || []).length === 1 ? "y" : "ies"}, {(month.investments || []).length} investment{(month.investments || []).length === 1 ? "" : "s"}</li>
+              <li>Income, savings balance, wishlist withdrawals for this month</li>
+            </ul>
+            <p style={{ fontSize: 12, color: "var(--warn)", marginTop: 10 }}>
+              ⚠ This cannot be undone. Other months are not affected, but opening-balance chains will be re-computed.
             </p>
             <div className="modal-actions">
-              <button className="signoutbtn" onClick={() => setShowPastMonthModal(false)}>Cancel</button>
+              <button className="signoutbtn" onClick={() => setConfirmDeleteMonth(false)}>Cancel</button>
               <button
-                className="savebtn"
+                className="deletebtn"
                 onClick={async () => {
-                  const ok = await addPastMonth(pastMonthInput);
-                  if (ok) setShowPastMonthModal(false);
+                  const ok = await deleteMonth(currentKey);
+                  if (ok) setConfirmDeleteMonth(false);
                 }}
-                disabled={!pastMonthInput}
               >
-                Create month
+                Delete permanently
               </button>
             </div>
           </div>
