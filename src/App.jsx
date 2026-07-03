@@ -487,7 +487,7 @@ function SheetWrap({ cols, children }) {
 /* ---------------- Expenses tab ---------------- */
 
 function ExpensesTab({ month, setMonth, allMonths }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const c = computeMonth(month, allMonths);
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -667,7 +667,7 @@ function ExpensesTab({ month, setMonth, allMonths }) {
 /* ---------------- Savings tab ---------------- */
 
 function SavingsTab({ month, setMonth, allMonths }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const c = computeMonth(month, allMonths);
   const [confirmClear, setConfirmClear] = useState(false);
   const updateIncome = (field, value) => setMonth(prev => ({ ...prev, income: { ...prev.income, [field]: value } }));
@@ -801,7 +801,7 @@ function SavingsTab({ month, setMonth, allMonths }) {
 /* ---------------- Debt tab ---------------- */
 
 function DebtTab({ month, setMonth, allMonths }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const c = computeMonth(month, allMonths);
 
   // On mount: ensure every debt has a stable ID. If any are missing, save immediately.
@@ -1026,7 +1026,7 @@ function ageBadgeClass(days) {
 }
 
 function LentTab({ month, setMonth, allMonths }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const c = computeMonth(month, allMonths);
   const lent = month.lent || [];
   const update = (idx, field, value) => setMonth(prev => ({ ...prev, lent: (prev.lent || []).map((r, i) => i === idx ? { ...r, [field]: value } : r) }));
@@ -1074,7 +1074,7 @@ function LentTab({ month, setMonth, allMonths }) {
 /* ---------------- Investments tab ---------------- */
 
 function InvestmentsTab({ month, setMonth, allMonths }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const c = computeMonth(month, allMonths);
   const investments = month.investments || [];
   const update = (idx, field, value) => setMonth(prev => ({ ...prev, investments: (prev.investments || []).map((r, i) => i === idx ? { ...r, [field]: value } : r) }));
@@ -1128,7 +1128,7 @@ function InvestmentsTab({ month, setMonth, allMonths }) {
 /* ---------------- Goals tab ---------------- */
 
 function GoalsTab({ goals, setGoals, avgSavings, monthsCounted }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const update = (idx, field, value) => setGoals(prev => prev.map((g, i) => i === idx ? { ...g, [field]: value } : g));
 
   return (
@@ -1845,7 +1845,7 @@ function buildFundingScenarios(item, fin, goals) {
 /* ---------------- Wishlist tab ---------------- */
 
 function WishlistTab({ wishlist, setWishlist, month, setMonth, goals, setGoals, allMonths, saveNow }) {
-  rowCounter = 1;
+  rowCounter = 0;
   const sortedMonths = [...allMonths].sort((a, b) => a.key.localeCompare(b.key));
   const fin = currentFinancials(sortedMonths);
   const [expanded, setExpanded] = useState(null); // item id
