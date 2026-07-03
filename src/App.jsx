@@ -579,6 +579,7 @@ function ExpensesTab({ month, setMonth, allMonths }) {
           <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("fixed", { name: "New expense", budget: null, actual: null, paidMark: false })}>+</button></Cell>
         </tr>
 
+        <SectionSpacer span={8} />
         <SectionTitle title="CREDIT CARD BILLS" span={8} />
         <HeaderRow labels={["Card", "Amount Due", "Paid", "Variance (₹)", "Status", "Paid?", "Remarks", ""]} />
         {month.cc.map((r, i) => {
@@ -610,6 +611,7 @@ function ExpensesTab({ month, setMonth, allMonths }) {
           <Cell align="center"><button className="rowbtn addbtn" onClick={() => addRow("cc", { name: "New card", due: null, paid: null, remarks: "", paidMark: false })}>+</button></Cell>
         </tr>
 
+        <SectionSpacer span={8} />
         <SectionTitle title="VARIABLE EXPENSES" span={8} />
         <HeaderRow labels={["Expense", "Budget (₹)", "Actual Paid (₹)", "Remaining (₹)", "Variance (₹)", "Status", "", ""]} />
         {month.variable.map((r, i) => {
@@ -701,6 +703,7 @@ function SavingsTab({ month, setMonth, allMonths }) {
       </div>
 
       <SheetWrap cols={4}>
+        <SectionSpacer span={8} />
         <SectionTitle title="INCOME & SAVINGS SUMMARY" span={4} />
         <HeaderRow labels={["", "Expected (₹)", "Actual (₹)", "Difference (₹)"]} />
         <tr>
@@ -739,6 +742,7 @@ function SavingsTab({ month, setMonth, allMonths }) {
           <Cell />
         </tr>
 
+        <SectionSpacer span={8} />
         <SectionTitle title="SAVINGS BALANCE (ACTUAL AMOUNT LEFT)" span={4} />
         <HeaderRow labels={["", "Amount (₹)", "", ""]} />
         <tr>
@@ -896,6 +900,7 @@ function DebtTab({ month, setMonth, allMonths }) {
       </div>
 
       <SheetWrap cols={6}>
+        <SectionSpacer span={8} />
         <SectionTitle title="DEBT OUTSTANDING (WHAT I OWE)" span={6} />
         <HeaderRow labels={["Creditor", "Type", "Original (₹)", "Effective (₹)", "Interest Rate (% p.a.)", ""]} />
         {(month.debts || []).map((r, i) => {
@@ -1045,6 +1050,7 @@ function LentTab({ month, setMonth, allMonths }) {
 
   return (
     <SheetWrap cols={6}>
+      <SectionSpacer span={8} />
       <SectionTitle title="LENT OUT (WHAT OTHERS OWE ME)" span={6} />
       <HeaderRow labels={["Person", "Amount (₹)", "Date Lent", "Age", "Note", ""]} />
       {lent.length === 0 && (
@@ -1093,6 +1099,7 @@ function InvestmentsTab({ month, setMonth, allMonths }) {
 
   return (
     <SheetWrap cols={9}>
+      <SectionSpacer span={8} />
       <SectionTitle title="INVESTMENTS" span={9} />
       <HeaderRow labels={["Name", "Type", "Invested (₹)", "Date", "Current Value (₹)", "Target Profit (%)", "Stop Loss (%)", "Gain / Loss", "Status"]} />
       {investments.map((r, i) => {
@@ -1148,6 +1155,7 @@ function GoalsTab({ goals, setGoals, avgSavings, monthsCounted }) {
         {avgSavings !== null ? `: ${fmt(avgSavings)}/month.` : " — add more months of data for an estimate."}
       </div>
       <SheetWrap cols={6}>
+        <SectionSpacer span={8} />
         <SectionTitle title="SAVINGS GOALS" span={6} />
         <HeaderRow labels={["Goal", "Target (₹)", "Saved (₹)", "Remaining (₹)", "Progress", "Predicted completion"]} />
         {goals.map((g, i) => {
@@ -1930,6 +1938,7 @@ function WishlistTab({ wishlist, setWishlist, month, setMonth, goals, setGoals, 
       </div>
 
       <SheetWrap cols={7}>
+        <SectionSpacer span={8} />
         <SectionTitle title="THINGS I'M CONSIDERING BUYING" span={7} />
         <HeaderRow labels={["Item", "Category", "Cost (₹)", "Priority", "Purpose", "Verdict", ""]} />
         {wishlist.length === 0 && (
