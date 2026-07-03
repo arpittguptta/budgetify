@@ -2853,7 +2853,7 @@ function PlannerApp() {
         .letter-row .corner { width: 30px; }
         .letter-row .letter { min-width: 92px; }
         .rownum { background: var(--sheet-header-bg); border: 1px solid var(--border); text-align: center; color: var(--text-dim); font-weight: 500; width: 30px; font-size: 11px; }
-        .section-row .section-title { background: var(--surface-2); color: var(--text); font-weight: 500; padding: 7px 10px; border: 1px solid var(--border-strong); letter-spacing: 0.05em; font-size: 11.5px; text-transform: uppercase; }
+        .section-row .section-title { background: var(--surface-2); color: var(--text); font-weight: 500; padding: 10px 12px; border: 1px solid var(--border-strong); letter-spacing: 0.05em; font-size: 14.5px; text-transform: uppercase; }
         .colhead-row .colhead { background: var(--surface-2); font-weight: 500; border: 1px solid var(--border); padding: 6px 10px; white-space: nowrap; color: var(--text-mid); font-size: 11.5px; }
         .cell { border: 1px solid var(--border); padding: 3px 8px; height: 28px; white-space: nowrap; }
         .cell-strong { font-weight: 500; color: var(--text); }
