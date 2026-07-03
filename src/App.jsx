@@ -446,6 +446,7 @@ function EditDate({ value, onChange }) {
   );
 }
 function SectionTitle({ title, span }) {
+  rowCounter = 0;
   return (
     <tr className="section-row">
       <td className="rownum" />
